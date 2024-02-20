@@ -12,120 +12,50 @@
 package smtp
 
 import (
-	"bytes"
 	"crypto/tls"
 	"fmt"
 	"net/smtp"
-	"strings"
-)
-
-const (
-	defaultPort         = "25"
-	defaultStartTLSPort = "587"
-	defaultTLSPort      = "465"
-	ctHtml              = "Content-Type: text/html"
 )
 
 type mail struct {
-	username, password string
-	auth               smtp.Auth
-	from               string
-	to, cc, bcc        []string
-	subject            string
-	message            string
-	headers            []string
-	host, port, addr   string
-	starttls, tls      bool
-	tlc                *tls.Config
+	auth             smtp.Auth
+	host, port, addr string
+	message          *Message
 }
 
-func Mail() *mail {
-	f := func() []string { return make([]string, 0) }
-	return &mail{
-		to:      f(),
-		cc:      f(),
-		bcc:     f(),
-		headers: f(),
-	}
+func Mail() *mail { return &mail{} }
+
+func (m *mail) f(u, p, h string) smtp.Auth              { return smtp.PlainAuth("", u, p, h) }
+func (m *mail) PlainAuth(user, pass, host string) *mail { m.Auth(m.f(user, pass, host)); return m }
+func (m *mail) Auth(auth smtp.Auth) *mail               { m.auth = auth; return m }
+func (m *mail) Message(message *Message) *mail          { m.message = message; return m }
+
+func (m *mail) setAddr(host, port string) {
+	m.host = host
+	m.port = port
+	m.addr = fmt.Sprintf("%s:%s", host, port)
 }
 
-func (m *mail) Username(username string) *mail   { m.username = username; return m }
-func (m *mail) Password(password string) *mail   { m.password = password; return m }
-func (m *mail) Auth(auth smtp.Auth) *mail        { m.auth = auth; return m }
-func (m *mail) From(from string) *mail           { m.from = from; return m }
-func (m *mail) To(to ...string) *mail            { m.to = to; return m }
-func (m *mail) Cc(cc ...string) *mail            { m.cc = cc; return m }
-func (m *mail) Bcc(bcc ...string) *mail          { m.bcc = bcc; return m }
-func (m *mail) Subject(subject string) *mail     { m.subject = subject; return m }
-func (m *mail) Message(message string) *mail     { m.message = message; return m }
-func (m *mail) Html(html string) *mail           { m.AddHeader(ctHtml); return m.Message(html) }
-func (m *mail) Header(header ...string) *mail    { m.headers = header; return m }
-func (m *mail) AddHeader(header ...string) *mail { m.headers = append(m.headers, header...); return m }
-func (m *mail) Host(host string) *mail           { m.host = host; return m }
-func (m *mail) Port(port string) *mail           { m.port = port; return m }
-func (m *mail) TLS(tlc *tls.Config) *mail        { m.tls = true; m.tlc = tlc; return m }
-func (m *mail) StartTLS() *mail                  { m.starttls = true; return m }
-
-func (m *mail) Send() (err error) {
-	m.setPort()
-	m.setAuth()
-	if m.tls {
-		return m.sendTLS()
+func (m *mail) Send(host, port string, TLS bool, opt ...func(tlc *tls.Config)) (err error) {
+	m.setAddr(host, port)
+	if TLS {
+		tlc := &tls.Config{ServerName: host}
+		if len(opt) > 0 {
+			for _, fn := range opt {
+				fn(tlc)
+			}
+		}
+		return m.sendTLS(tlc)
 	}
 	return m.send()
 }
 
-func (m *mail) setPort() {
-	defer func() { m.addr = fmt.Sprintf("%s:%s", m.host, m.port) }()
-	if m.port != "" {
-		return
-	}
-	if m.tls {
-		m.port = defaultTLSPort
-	} else if m.starttls {
-		m.port = defaultStartTLSPort
-	} else {
-		m.port = defaultPort
-	}
-}
-
-func (m *mail) setAuth() {
-	if m.auth == nil {
-		m.auth = smtp.PlainAuth("", m.username, m.password, m.host)
-	}
-}
-
-func (m *mail) buildMsg() []byte {
-	buf := &bytes.Buffer{}
-	if from := m.from; from != "" {
-		buf.WriteString(fmt.Sprintf("From: %s\r\n", m.from))
-	}
-	if to := m.to; len(to) > 0 {
-		buf.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(to, ";")))
-	}
-	if cc := m.cc; len(cc) > 0 {
-		buf.WriteString(fmt.Sprintf("Cc: %s\r\n", strings.Join(cc, ";")))
-	}
-	if bcc := m.bcc; len(bcc) > 0 {
-		buf.WriteString(fmt.Sprintf("Bcc: %s\r\n", strings.Join(bcc, ";")))
-	}
-	if subject := m.subject; subject != "" {
-		buf.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	}
-	for _, header := range m.headers {
-		buf.WriteString(fmt.Sprintf("%s\r\n", header))
-	}
-	buf.WriteString("\r\n")
-	buf.WriteString(m.message)
-	return buf.Bytes()
-}
-
 func (m *mail) send() (err error) {
-	return smtp.SendMail(m.addr, m.auth, m.from, m.to, m.buildMsg())
+	return smtp.SendMail(m.addr, m.auth, m.message.From.Addr, m.message.To, m.message.toBytes())
 }
 
-func (m *mail) sendTLS() (err error) {
-	tlsConn, tlsErr := tls.Dial("tcp", m.addr, m.tlc)
+func (m *mail) sendTLS(tlc *tls.Config) (err error) {
+	tlsConn, tlsErr := tls.Dial("tcp", m.addr, tlc)
 	if tlsErr != nil {
 		return tlsErr
 	}
@@ -139,10 +69,10 @@ func (m *mail) sendTLS() (err error) {
 	if err = client.Auth(m.auth); err != nil {
 		return
 	}
-	if err = client.Mail(m.from); err != nil {
+	if err = client.Mail(m.message.From.Addr); err != nil {
 		return
 	}
-	for _, to := range m.to {
+	for _, to := range m.message.To {
 		if err = client.Rcpt(to); err != nil {
 			return
 		}
@@ -151,7 +81,7 @@ func (m *mail) sendTLS() (err error) {
 	if err != nil {
 		return err
 	}
-	_, err = w.Write(m.buildMsg())
+	_, err = w.Write(m.message.toBytes())
 	if err != nil {
 		return err
 	}

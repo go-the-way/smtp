@@ -50,3 +50,55 @@ S: 221 Bye
   fields, [RFC 6531](https://datatracker.ietf.org/doc/html/rfc6531)
 - UTF8SMTP – Allow UTF-8 encoding in mailbox names and header
   fields, [RFC 5336](https://datatracker.ietf.org/doc/html/rfc5336) (deprecated[28])
+
+## Example
+```go
+
+package main
+
+import (
+  "fmt"
+  
+  "github.com/rwscode/smtp"
+)
+
+var (
+  from     = "noreply@example.com"
+  to       = []string{"ex1@example.com", "ex2@example.com"}
+  host     = "smtp.example.com"
+  port     = "587" // 25 for smtp, 587 for STARTTLS, 465 for TLS
+  portTLS  = "465" // 25 for smtp, 587 for STARTTLS, 465 for TLS
+  username = "mailuser"
+  password = "mailpasswd"
+  subject  = "Test message"
+  message  = `This is a test message by Go rwscode/smtp`
+)
+
+func main() {
+  err := smtp.Mail().Message(&smtp.Message{
+    From:    &smtp.Email{Addr: from},
+    To:      to,
+    Subject: subject,
+    Content: smtp.Content{ContentType: smtp.Plain, Body: message},
+  }).PlainAuth(username, password, host).Send(host, port, false)
+  if err != nil {
+    fmt.Println("send mail error:", err)
+    return
+  }
+  fmt.Println("send mail successful")
+}
+
+func mainTLS() {
+  err := smtp.Mail().Message(&smtp.Message{
+    From:    &smtp.Email{Addr: from},
+    To:      to,
+    Subject: subject,
+    Content: smtp.Content{ContentType: smtp.Plain, Body: message},
+  }).PlainAuth(username, password, host).Send(host, portTLS, true)
+  if err != nil {
+    fmt.Println("send mail error:", err)
+    return
+  }
+  fmt.Println("send mail successful")
+}
+```

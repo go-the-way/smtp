@@ -12,7 +12,6 @@
 package smtp
 
 import (
-	"crypto/tls"
 	"fmt"
 	"testing"
 )
@@ -20,8 +19,6 @@ import (
 var (
 	from     = "noreply@example.com"
 	to       = []string{"ex1@example.com", "ex2@example.com"}
-	bcc      = []string{"ex1@example.com", "ex2@example.com"}
-	cc       = []string{"ex1@example.com", "ex2@example.com"}
 	host     = "smtp.example.com"
 	port     = "587" // 25 for smtp, 587 for STARTTLS, 465 for TLS
 	portTLS  = "465" // 25 for smtp, 587 for STARTTLS, 465 for TLS
@@ -32,10 +29,12 @@ var (
 )
 
 func TestMailSend(t *testing.T) {
-	err := Mail().Username(username).Password(password).
-		From(from).To(to...).Cc(cc...).Bcc(bcc...).Subject(subject).Message(message).
-		Host(host).Port(port).
-		Send()
+	err := Mail().Message(&Message{
+		From:    &Email{Addr: from},
+		To:      to,
+		Subject: subject,
+		Content: Content{ContentType: Plain, Body: message},
+	}).PlainAuth(username, password, host).Send(host, port, false)
 	if err != nil {
 		fmt.Println("send mail error:", err)
 		return
@@ -44,10 +43,12 @@ func TestMailSend(t *testing.T) {
 }
 
 func TestMailSendTLS(t *testing.T) {
-	err := Mail().Username(username).Password(password).
-		From(from).To(to...).Cc(cc...).Bcc(bcc...).Subject(subject).Message(message).
-		Host(host).Port(portTLS).
-		TLS(&tls.Config{InsecureSkipVerify: true, ServerName: host}).Send()
+	err := Mail().Message(&Message{
+		From:    &Email{Addr: from},
+		To:      to,
+		Subject: subject,
+		Content: Content{ContentType: Plain, Body: message},
+	}).PlainAuth(username, password, host).Send(host, portTLS, true)
 	if err != nil {
 		fmt.Println("send mail error:", err)
 		return
