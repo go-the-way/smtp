@@ -10,7 +10,7 @@ package main
 import (
   "fmt"
   
-  "github.com/rwscode/smtp"
+  "github.com/go-the-way/smtp"
 )
 
 var (
